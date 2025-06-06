@@ -1,0 +1,123 @@
+#install packages
+if (!require("forecast")) install.packages("forecast")
+if (!require("readxl")) install.packages("readxl")
+if (!require("lmtest")) install.packages("lmtest")
+if (!require("tseries")) install.packages("tseries")
+
+#Load libraries
+library(forecast)
+library(readxl)
+library(lmtest)
+library(tseries)
+
+
+# 1. Summarize data
+summary(data)
+
+
+# 2a. Graph the Tampa employment series
+EMPTPA <- ts(data$EMPTPA, start = c(2000, 1), frequency = 12) # Convert to a yearly time series object
+ts.plot(EMPTPA, main = "Tampa Employment Series Plot", ylab = "EMPTPA", xlab = "Year")
+# 2b. Decompose the series 
+EMPTPA_decomposed <- decompose(EMPTPA, type = "additive")
+plot(EMPTPA_decomposed)
+
+
+# 3. Run linear model
+linear_model <- tslm(EMPTPA ~ trend + season) # a. Model the full dataset
+summary(linear_model)
+
+cat("AIC:", AIC(linear_model), "\n", "BIC:", BIC(linear_model), "\n") #b. Print information criteria AIC and BIC
+
+forecast_horizon <- 12 # c. Forecast 12 months ahead
+linear_forecast <- forecast(linear_model, h = forecast_horizon)
+print(linear_forecast) # Print forecast and 95% prediction interval 
+
+plot(
+  linear_forecast,
+  main = "Linear Forecast with Prediction Intervals",
+  xlab = "Year",
+  ylab = "EMPTPA"
+) # Graph forecasts
+
+
+# 4. Quadratic model
+quadratic_model <- tslm(EMPTPA ~ trend + I(trend^2) + season, level = c(80,95)) # a. Model the full dataset
+summary(quadratic_model)
+
+cat("AIC:", AIC(quadratic_model), "\n", "BIC:", BIC(quadratic_model), "\n") #b. Print information criteria AIC and BIC
+
+forecast_horizon <- 12 # c. Forecast 12 months ahead
+quadratic_forecast <- forecast(quadratic_model, h = forecast_horizon)
+print(quadratic_forecast) # Print forecast and 95% prediction interval 
+
+plot(
+  quadratic_forecast,
+  main = "Quadratic Forecast with Prediction Intervals",
+  xlab = "Year",
+  ylab = "EMPTPA"
+) # Graph forecasts
+
+
+# 5. Run exponential growth
+# Fit a Log-Linear Model Using tslm() with Seasonality
+log_model <- tslm(log(EMPTPA) ~ trend + season)
+summary(log_model)
+
+cat("AIC:", AIC(log_model), "\n", "BIC:", BIC(log_model), "\n") #b. Print information criteria AIC and BIC
+
+# Forecast in Log-Scale
+log_forecast <- forecast(log_model, h = forecast_horizon, level = c(80, 95))
+print(log_forecast) # Generates PI on log scale
+
+plot(
+  log_forecast,
+  main = "Exponential Forecast with Prediction Intervals",
+  xlab = "Year",
+  ylab = "EMPTPA"
+) # Graph forecasts
+
+
+# 6. Back-transform
+# Compute Bias Adjustment Factor
+sigma2 <- (summary(log_model)$sigma)^2 #Variance of residuals
+bias_adj_factor <- exp(sigma2 / 2) # Bias adjustment factor
+bias_adj_factor
+
+# Modifying Forecast Object with Bias Adjustment
+forecast_level <- log_forecast # Create a copy
+forecast_level$mean <- exp(log_forecast$mean) * bias_adj_factor # Back-transform mean with bias adjustment
+forecast_level$lower <- exp(log_forecast$lower) * bias_adj_factor # Back-transform lower PI with bias adjustment
+forecast_level$upper <- exp(log_forecast$upper) * bias_adj_factor # Back-transform upper PI with bias adjustment
+forecast_level$x <- exp(log_forecast$x) # Attach original levels
+print(forecast_level)
+
+# Forecast in Log-Scale
+log_forecast <- forecast(log_model, h = forecast_horizon, level = c(80, 95))
+print(log_forecast) # Generates PI on log scale
+
+# Plot the Forecast on Original Scale
+plot(forecast_level, main = "Exponential Trend Model Forecast (Back-Transformed
+with Bias Adj.)", ylab = "Original Scale", xlab = "Year", col = "blue")
+
+
+### additional graphs
+# Plot Actual vs Fitted Values in Levels
+fitted_values_level <- ts(exp(fitted(log_model)) * bias_adj_factor, start =
+                            start(EMPTPA), frequency = frequency(EMPTPA)) # Back-transform fitted values
+plot(ts(exp(log_model$model[,1]), start = start(EMPTPA), frequency =
+          frequency(EMPTPA)), type = "l", col = "blue", main = "Log-Linear Model: Actual vs
+Fitted (Levels)", ylab = "Levels", xlab = "Time")
+lines(fitted_values_level, col = "red", lwd = 2)
+legend("topleft", legend = c("Actual Data", "Exponential Trend"), col = c("blue",
+                                                                          "red"), lty = 1, lwd = 2)
+
+# Plot Actual vs Fitted Values in Log Scale
+fitted_values_log <- ts(fitted(log_model), start = start(EMPTPA), frequency =
+                          frequency(EMPTPA))
+plot(ts(log_model$model[,1], start = start(EMPTPA), frequency =
+          frequency(EMPTPA)), type = "l", col = "blue", main = "Log-Linear Model: Actual vs
+Fitted (Log Scale)", ylab = "Log Scale", xlab = "Time")
+lines(fitted_values_log, col = "red", lwd = 2)
+legend("topleft", legend = c("Actual Data (Log)", "Fitted Values"), col = c("blue",
+                                                                            "red"), lty = 1, lwd = 2)
